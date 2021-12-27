@@ -7,7 +7,6 @@
 
 #include "lighter/common/file.h"
 
-#include <cstdlib>
 #include <exception>
 #include <fstream>
 
@@ -18,8 +17,6 @@
 #include "third_party/absl/strings/str_replace.h"
 #include "third_party/absl/strings/str_split.h"
 #include "tools/cpp/runfiles/runfiles.h"
-
-#undef VULKAN_FOLDER
 
 namespace lighter::common {
 namespace {
@@ -57,7 +54,7 @@ class RunfileLookup {
 
 const Runfiles* RunfileLookup::runfiles_ = nullptr;
 
-// Opens the file in the given 'path' and checks whether it is successful.
+// Opens the file in the given `path` and checks whether it is successful.
 std::ifstream OpenFile(std::string_view path) {
   // On Windows, character 26 (Ctrl+Z) is treated as EOF, so we have to include
   // std::ios::binary.
@@ -66,7 +63,7 @@ std::ifstream OpenFile(std::string_view path) {
   return file;
 }
 
-// Splits the given 'text' by 'delimiter', while 'num_segments' is the expected
+// Splits the given `text` by `delimiter`, while `num_segments` is the expected
 // length of results. An exception will be thrown if the length does not match.
 std::vector<std::string> SplitText(std::string_view text, char delimiter,
                                    int num_segments) {
@@ -116,105 +113,18 @@ std::string GetVulkanSdkPath(std::string_view relative_path) {
   return (*vk_sdk_path / relative_path).string();
 }
 
-}  // namespace file
-
-RawData::RawData(std::string_view path) {
+Data LoadDataFromFile(std::string_view path) {
   std::ifstream file = OpenFile(path);
   file.seekg(0, std::ios::end);
-  size = file.tellg();
-  auto* content = new char[size];
+  const size_t size = file.tellg();
+  Data data{size};
   file.seekg(0, std::ios::beg);
-  file.read(content, size);
+  file.read(data.mut_data<char>(), size);
   ASSERT_TRUE(file, absl::StrFormat("Failed to read file '%s'", path));
-  data = content;
-}
-
-#define APPEND_ATTRIBUTES(attributes, type, member) \
-    file::AppendVertexAttributes<decltype(type::member)>( \
-        attributes, offsetof(type, member))
-
-std::vector<VertexAttribute> Vertex2DPosOnly::GetVertexAttributes() {
-  std::vector<VertexAttribute> attributes;
-  APPEND_ATTRIBUTES(attributes, Vertex2DPosOnly, pos);
-  return attributes;
-}
-
-std::vector<VertexAttribute> Vertex2D::GetVertexAttributes() {
-  std::vector<VertexAttribute> attributes;
-  APPEND_ATTRIBUTES(attributes, Vertex2D, pos);
-  APPEND_ATTRIBUTES(attributes, Vertex2D, tex_coord);
-  return attributes;
-}
-
-std::vector<VertexAttribute> Vertex3DPosOnly::GetVertexAttributes() {
-  std::vector<VertexAttribute> attributes;
-  APPEND_ATTRIBUTES(attributes, Vertex3DPosOnly, pos);
-  return attributes;
-}
-
-std::vector<VertexAttribute> Vertex3DWithColor::GetVertexAttributes() {
-  std::vector<VertexAttribute> attributes;
-  APPEND_ATTRIBUTES(attributes, Vertex3DWithColor, pos);
-  APPEND_ATTRIBUTES(attributes, Vertex3DWithColor, color);
-  return attributes;
-}
-
-std::vector<VertexAttribute> Vertex3DWithTex::GetVertexAttributes() {
-  std::vector<VertexAttribute> attributes;
-  APPEND_ATTRIBUTES(attributes, Vertex3DWithTex, pos);
-  APPEND_ATTRIBUTES(attributes, Vertex3DWithTex, norm);
-  APPEND_ATTRIBUTES(attributes, Vertex3DWithTex, tex_coord);
-  return attributes;
-}
-
-#undef APPEND_ATTRIBUTES
-
-namespace file {
-
-template <>
-void AppendVertexAttributes<glm::mat4>(std::vector<VertexAttribute>& attributes,
-                                       int offset_bytes) {
-  attributes.reserve(attributes.size() + glm::mat4::length());
-  for (int i = 0; i < glm::mat4::length(); ++i) {
-    AppendVertexAttributes<glm::vec4>(attributes, offset_bytes);
-    offset_bytes += sizeof(glm::vec4);
-  }
+  return data;
 }
 
 }  // namespace file
-
-std::array<Vertex2DPosOnly, 6> Vertex2DPosOnly::GetFullScreenSquadVertices() {
-  return {
-      Vertex2DPosOnly{.pos = {-1.0f, -1.0f}},
-      Vertex2DPosOnly{.pos = { 1.0f, -1.0f}},
-      Vertex2DPosOnly{.pos = { 1.0f,  1.0f}},
-      Vertex2DPosOnly{.pos = {-1.0f, -1.0f}},
-      Vertex2DPosOnly{.pos = { 1.0f,  1.0f}},
-      Vertex2DPosOnly{.pos = {-1.0f,  1.0f}},
-  };
-}
-
-std::array<Vertex2D, 6> Vertex2D::GetFullScreenSquadVertices(bool flip_y) {
-  if (flip_y) {
-    return {
-        Vertex2D{.pos = {-1.0f, -1.0f}, .tex_coord = {0.0f, 1.0f}},
-        Vertex2D{.pos = { 1.0f, -1.0f}, .tex_coord = {1.0f, 1.0f}},
-        Vertex2D{.pos = { 1.0f,  1.0f}, .tex_coord = {1.0f, 0.0f}},
-        Vertex2D{.pos = {-1.0f, -1.0f}, .tex_coord = {0.0f, 1.0f}},
-        Vertex2D{.pos = { 1.0f,  1.0f}, .tex_coord = {1.0f, 0.0f}},
-        Vertex2D{.pos = {-1.0f,  1.0f}, .tex_coord = {0.0f, 0.0f}},
-    };
-  } else {
-    return {
-        Vertex2D{.pos = {-1.0f, -1.0f}, .tex_coord = {0.0f, 0.0f}},
-        Vertex2D{.pos = { 1.0f, -1.0f}, .tex_coord = {1.0f, 0.0f}},
-        Vertex2D{.pos = { 1.0f,  1.0f}, .tex_coord = {1.0f, 1.0f}},
-        Vertex2D{.pos = {-1.0f, -1.0f}, .tex_coord = {0.0f, 0.0f}},
-        Vertex2D{.pos = { 1.0f,  1.0f}, .tex_coord = {1.0f, 1.0f}},
-        Vertex2D{.pos = {-1.0f,  1.0f}, .tex_coord = {0.0f, 1.0f}},
-    };
-  }
-}
 
 ObjFile::ObjFile(std::string_view path, int index_base) {
   std::ifstream file = OpenFile(path);

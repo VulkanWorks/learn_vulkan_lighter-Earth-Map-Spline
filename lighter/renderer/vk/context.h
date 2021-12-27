@@ -44,9 +44,22 @@ class Context : public std::enable_shared_from_this<Context> {
   Context(const Context&) = delete;
   Context& operator=(const Context&) = delete;
 
+  ~Context() {
+    WaitIdle();
 #ifndef NDEBUG
-  ~Context() { LOG_INFO << "Context destructed properly"; }
+    LOG_INFO << "Context destructed";
 #endif  // DEBUG
+  }
+
+  // Convenience functions for destroying Vulkan objects.
+  template <typename T>
+  void InstanceDestroy(T t) const {
+    instance()->destroy(t, *host_allocator());
+  }
+  template <typename T>
+  void DeviceDestroy(T t) const {
+    device()->destroy(t, *host_allocator());
+  }
 
   // Records an operation that releases an expired resource, so that it can be
   // executed once the device becomes idle. This is used for resources that can
@@ -117,6 +130,12 @@ class WithSharedContext {
   WithSharedContext& operator=(const WithSharedContext&) = delete;
 
   virtual ~WithSharedContext() = default;
+
+  // Accessors.
+  intl::Device vk_device() const { return *context_->device(); }
+  intl::Optional<const intl::AllocationCallbacks> vk_host_allocator() const {
+    return *context_->host_allocator();
+  }
 
  protected:
   const SharedContext context_;

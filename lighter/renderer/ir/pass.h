@@ -19,50 +19,39 @@
 
 namespace lighter::renderer::ir {
 
-class GraphicsOps {
- public:
-  struct MultisampleResolveDescriptor {
-    MultisampleResolveDescriptor(const DeviceImage* source_image,
-                                 const DeviceImage* target_image)
+struct SubpassDescriptor {
+  struct MultisampleResolve {
+    MultisampleResolve(const Image* source_image,
+                       const Image* target_image)
         : source_image{FATAL_IF_NULL(source_image)},
           target_image{FATAL_IF_NULL(target_image)} {}
 
-    const DeviceImage* source_image;
-    const DeviceImage* target_image;
+    const Image* source_image;
+    const Image* target_image;
   };
 
-  // This class is only movable.
-  GraphicsOps(GraphicsOps&&) noexcept = default;
-  GraphicsOps& operator=(GraphicsOps&&) noexcept = default;
-
-  int AddPipeline(GraphicsPipelineDescriptor&& descriptor) {
-    pipeline_descriptors_.push_back(std::move(descriptor));
-    return (static_cast<int>(pipeline_descriptors_.size()) - 1) * 2;
+  SubpassDescriptor& AddPipeline(GraphicsPipelineDescriptor&& descriptor) {
+    pipeline_descriptors.push_back(std::move(descriptor));
+    return *this;
+  }
+  SubpassDescriptor& AddColorAttachment(const Image* attachment) {
+    color_attachments.push_back(attachment);
+    return *this;
+  }
+  SubpassDescriptor& AddMultisampleResolve(const Image* source_image,
+                                           const Image* target_image) {
+    multisample_resolves.push_back({source_image, target_image});
+    return *this;
+  }
+  SubpassDescriptor& SetDepthStencilAttachment(const Image* attachment) {
+    depth_stencil_attachment = attachment;
+    return *this;
   }
 
-  int AddMultisampleResolve(const DeviceImage* source_image,
-                            const DeviceImage* target_image) {
-    resolve_descriptors_.push_back({source_image, target_image});
-    return (static_cast<int>(resolve_descriptors_.size()) - 1) * 2 + 1;
-  }
-
-  static bool IsPipeline(int id) {
-    return id % 2 == 0;
-  }
-
-  const GraphicsPipelineDescriptor& GetPipeline(int id) const {
-    ASSERT_TRUE(IsPipeline(id), "Not a pipeline");
-    return pipeline_descriptors_.at(id / 2);
-  }
-
-  const MultisampleResolveDescriptor& GetMultisampleResolve(int id) const {
-    ASSERT_TRUE(!IsPipeline(id), "Not a multisample resolve");
-    return resolve_descriptors_.at(id / 2);
-  }
-
- private:
-  std::vector<GraphicsPipelineDescriptor> pipeline_descriptors_;
-  std::vector<MultisampleResolveDescriptor> resolve_descriptors_;
+  std::vector<GraphicsPipelineDescriptor> pipeline_descriptors;
+  std::vector<const Image*> color_attachments;
+  std::vector<MultisampleResolve> multisample_resolves;
+  const Image* depth_stencil_attachment = nullptr;
 };
 
 struct RenderPassDescriptor {
@@ -71,62 +60,43 @@ struct RenderPassDescriptor {
     AttachmentStoreOp store_op = AttachmentStoreOp::kDontCare;
   };
 
-  struct ColorLoadStoreOps : public LoadStoreOps {
-    static ColorLoadStoreOps GetDefaultOps() {
-      return {{AttachmentLoadOp::kClear, AttachmentStoreOp::kStore}};
-    }
-  };
+  struct ColorLoadStoreOps : public LoadStoreOps {};
 
   struct DepthStencilLoadStoreOps {
-    static DepthStencilLoadStoreOps GetDefaultDepthOps() {
-      return {.depth_ops = {AttachmentLoadOp::kClear,
-                            AttachmentStoreOp::kDontCare}};
-    }
-
     LoadStoreOps depth_ops;
     LoadStoreOps stencil_ops;
   };
 
-  struct GraphicsOpDependency {
-    int from_id;
-    int to_id;
-    std::vector<const DeviceImage*> attachments;
+  struct SubpassDependency {
+    int from;
+    int to;
+    std::vector<const Image*> attachments;
   };
 
-  RenderPassDescriptor& SetNumFramebuffers(int count) {
-    num_framebuffers = count;
-    return *this;
-  }
-  RenderPassDescriptor& SetLoadStoreOps(const DeviceImage* attachment,
-                                        const ColorLoadStoreOps& ops) {
+  RenderPassDescriptor& AddAttachment(const Image* attachment,
+                                      const ColorLoadStoreOps& ops) {
     color_ops_map.insert({attachment, ops});
     return *this;
   }
-  RenderPassDescriptor& SetLoadStoreOps(const DeviceImage* attachment,
-                                        const DepthStencilLoadStoreOps& ops) {
+  RenderPassDescriptor& AddAttachment(const Image* attachment,
+                                      const DepthStencilLoadStoreOps& ops) {
     depth_stencil_ops_map.insert({attachment, ops});
     return *this;
   }
-
-  RenderPassDescriptor& SetGraphicsOps(GraphicsOps&& ops) {
-    graphics_ops = std::move(ops);
+  RenderPassDescriptor& AddSubpass(SubpassDescriptor&& descriptor) {
+    subpass_descriptors.push_back(std::move(descriptor));
     return *this;
   }
-  RenderPassDescriptor& AddDependency(
-      int from_id, int to_id, std::vector<const DeviceImage*>&& attachments) {
-    dependencies.push_back({from_id, to_id, std::move(attachments)});
+  RenderPassDescriptor& AddSubpassDependency(SubpassDependency&& dependency) {
+    subpass_dependencies.push_back(std::move(dependency));
     return *this;
   }
-  RenderPassDescriptor& AddDependency(int from_id, int to_id) {
-    return AddDependency(from_id, to_id, {});
-  }
 
-  int num_framebuffers = 0;
-  absl::flat_hash_map<const DeviceImage*, ColorLoadStoreOps> color_ops_map;
-  absl::flat_hash_map<const DeviceImage*, DepthStencilLoadStoreOps>
+  absl::flat_hash_map<const Image*, ColorLoadStoreOps> color_ops_map;
+  absl::flat_hash_map<const Image*, DepthStencilLoadStoreOps>
       depth_stencil_ops_map;
-  std::optional<GraphicsOps> graphics_ops;
-  std::vector<GraphicsOpDependency> dependencies;
+  std::vector<SubpassDescriptor> subpass_descriptors;
+  std::vector<SubpassDependency> subpass_dependencies;
 };
 
 struct ComputePassDescriptor {

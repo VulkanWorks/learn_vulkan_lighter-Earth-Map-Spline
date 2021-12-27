@@ -14,6 +14,7 @@
 #include <type_traits>
 
 #include "lighter/common/camera.h"
+#include "lighter/common/data.h"
 #include "lighter/common/file.h"
 #include "lighter/common/graphics_api.h"
 #include "lighter/common/image.h"
@@ -179,7 +180,7 @@ class OnScreenRenderPassManager {
 // the constructor of the application.
 template <typename AppType, typename... AppArgs>
 int AppMain(int argc, char* argv[], AppArgs&&... app_args) {
-  static_assert(std::is_base_of<Application, AppType>::value,
+  static_assert(std::is_base_of_v<Application, AppType>,
                 "Not a subclass of Application");
 
   absl::ParseCommandLine(argc, argv);

@@ -37,45 +37,33 @@ class Renderer {
 
   virtual ~Renderer() = default;
 
-  // Host buffer
-
-  std::unique_ptr<HostBuffer> CreateHostBuffer(size_t size) const {
-    return std::make_unique<HostBuffer>(size);
-  }
-
-  template <typename DataType>
-  std::unique_ptr<HostBuffer> CreateHostBuffer(int num_chunks) const {
-    return CreateHostBuffer(sizeof(DataType) * num_chunks);
-  }
-
   // Device buffer
 
-  virtual std::unique_ptr<DeviceBuffer> CreateDeviceBuffer(
-      DeviceBuffer::UpdateRate update_rate, size_t initial_size,
+  virtual std::unique_ptr<Buffer> CreateBuffer(
+      Buffer::UpdateRate update_rate, size_t initial_size,
       absl::Span<const BufferUsage> usages) const = 0;
 
   template <typename DataType>
-  std::unique_ptr<DeviceBuffer> CreateDeviceBuffer(
-      DeviceBuffer::UpdateRate update_rate, int num_chunks,
+  std::unique_ptr<Buffer> CreateBuffer(
+      Buffer::UpdateRate update_rate, int num_chunks,
       absl::Span<const BufferUsage> usages) const {
-    return CreateDeviceBuffer(update_rate, sizeof(DataType) * num_chunks,
-                              usages);
+    return CreateBuffer(update_rate, sizeof(DataType) * num_chunks, usages);
   }
 
   // Device image
 
-  virtual const DeviceImage& GetSwapchainImage(int window_index) const = 0;
+  virtual const Image& GetSwapchainImage(int window_index) const = 0;
 
-  virtual std::unique_ptr<DeviceImage> CreateColorImage(
+  virtual std::unique_ptr<Image> CreateColorImage(
       std::string_view name, const common::Image::Dimension& dimension,
       MultisamplingMode multisampling_mode, bool high_precision,
       absl::Span<const ImageUsage> usages) const = 0;
 
-  virtual std::unique_ptr<DeviceImage> CreateColorImage(
+  virtual std::unique_ptr<Image> CreateColorImage(
       std::string_view name, const common::Image& image, bool generate_mipmaps,
       absl::Span<const ImageUsage> usages) const = 0;
 
-  virtual std::unique_ptr<DeviceImage> CreateDepthStencilImage(
+  virtual std::unique_ptr<Image> CreateDepthStencilImage(
       std::string_view name, const glm::ivec2& extent,
       MultisamplingMode multisampling_mode,
       absl::Span<const ImageUsage> usages) const = 0;
@@ -83,10 +71,10 @@ class Renderer {
   // Pass
 
   virtual std::unique_ptr<RenderPass> CreateRenderPass(
-      const RenderPassDescriptor& descriptor) const = 0;
+      RenderPassDescriptor&& descriptor) const = 0;
 
   virtual std::unique_ptr<ComputePass> CreateComputePass(
-      const ComputePassDescriptor& descriptor) const = 0;
+      ComputePassDescriptor&& descriptor) const = 0;
 
  protected:
   explicit Renderer(std::vector<const common::Window*>&& windows)

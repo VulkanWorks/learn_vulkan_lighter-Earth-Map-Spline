@@ -31,7 +31,7 @@ intl::Extent2D ChooseImageExtent(const common::Window& window,
       std::numeric_limits<uint32_t>::max()) {
     return capabilities.currentExtent;
   } else {
-    intl::Extent2D extent = util::CreateExtent(window.GetFrameSize());
+    intl::Extent2D extent = util::ToExtent(window.GetFrameSize());
     extent.width = std::max(extent.width, capabilities.minImageExtent.width);
     extent.width = std::min(extent.width, capabilities.maxImageExtent.width);
     extent.height = std::max(extent.height, capabilities.minImageExtent.height);
@@ -72,8 +72,8 @@ intl::PresentModeKHR ChoosePresentMode(
   // so that we always get the most recently generated frame.
   // TODO: Use FIFO for mobile to save power.
   constexpr auto kBestMode = intl::PresentModeKHR::eMailbox;
-  const auto iter = std::find(modes.begin(), modes.end(), kBestMode);
-  return iter == modes.end() ? intl::PresentModeKHR::eFifo : kBestMode;
+  const bool supports_best_mode = common::util::Contains(modes, kBestMode);
+  return supports_best_mode ? kBestMode : intl::PresentModeKHR::eFifo;
 }
 
 // Returns the minimum number of images we want to have in the swapchain.
@@ -131,7 +131,7 @@ Swapchain::Swapchain(const SharedContext& context, int window_index,
       .setImageFormat(surface_format.format)
       .setImageColorSpace(surface_format.colorSpace)
       .setImageExtent(image_extent)
-      .setImageArrayLayers(kSingleImageLayer)
+      .setImageArrayLayers(CAST_TO_UINT(common::image::kSingleImageLayer))
       .setImageUsage(image::GetImageUsageFlags(swapchain_image_usages))
       .setImageSharingMode(intl::SharingMode::eExclusive)
       .setQueueFamilyIndices(unique_queue_family_indices)
@@ -139,18 +139,18 @@ Swapchain::Swapchain(const SharedContext& context, int window_index,
       .setPresentMode(present_mode)
       // Don't care about the color of invisible pixels.
       .setClipped(true);
-  swapchain_ = context_->device()->createSwapchainKHR(
-      swapchain_create_info, *context_->host_allocator());
+  swapchain_ = vk_device().createSwapchainKHR(swapchain_create_info,
+                                              vk_host_allocator());
 
   // Fetch swapchain images.
-  image_ = std::make_unique<SwapchainImage>(
+  image_ = std::make_unique<MultiImage>(
       absl::StrFormat("swapchain%d", window_index),
-      context_->device()->getSwapchainImagesKHR(swapchain_),
-      surface_format.format);
+      vk_device().getSwapchainImagesKHR(swapchain_),
+      util::ToVec(image_extent), surface_format.format);
 }
 
 Swapchain::~Swapchain() {
-  context_->device()->destroy(swapchain_, *context_->host_allocator());
+  context_->DeviceDestroy(swapchain_);
 #ifndef NDEBUG
   LOG_INFO << "Swapchain destructed";
 #endif  // DEBUG

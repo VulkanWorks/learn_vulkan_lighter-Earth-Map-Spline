@@ -24,7 +24,6 @@
 #include "lighter/renderer/vk/pipeline.h"
 #include "lighter/renderer/vk/render_pass.h"
 #include "lighter/renderer/vk/swapchain.h"
-#include "lighter/renderer/vk/util.h"
 #include "third_party/absl/types/span.h"
 #include "third_party/glm/glm.hpp"
 #include "third_party/vulkan/vulkan.h"
@@ -53,51 +52,51 @@ class Renderer : public WithSharedContext,
 
   // Buffer
 
-  std::unique_ptr<ir::DeviceBuffer> CreateDeviceBuffer(
-      DeviceBuffer::UpdateRate update_rate, size_t initial_size,
+  std::unique_ptr<ir::Buffer> CreateBuffer(
+      Buffer::UpdateRate update_rate, size_t initial_size,
       absl::Span<const ir::BufferUsage> usages) const override {
-    return std::make_unique<DeviceBuffer>(context_, update_rate, initial_size,
-                                          usages);
+    return std::make_unique<Buffer>(context_, update_rate, initial_size,
+                                    usages);
   }
 
   // Image
 
-  const DeviceImage& GetSwapchainImage(int window_index) const override {
+  const Image& GetSwapchainImage(int window_index) const override {
     return swapchains_.at(window_index)->image();
   }
 
-  std::unique_ptr<ir::DeviceImage> CreateColorImage(
+  std::unique_ptr<ir::Image> CreateColorImage(
       std::string_view name, const common::Image::Dimension& dimension,
       ir::MultisamplingMode multisampling_mode, bool high_precision,
       absl::Span<const ir::ImageUsage> usages) const override {
-    return GeneralDeviceImage::CreateColorImage(
+    return SingleImage::CreateColorImage(
         context_, name, dimension, multisampling_mode, high_precision, usages);
   }
 
-  std::unique_ptr<ir::DeviceImage> CreateColorImage(
+  std::unique_ptr<ir::Image> CreateColorImage(
       std::string_view name, const common::Image& image, bool generate_mipmaps,
       absl::Span<const ir::ImageUsage> usages) const override {
-    return GeneralDeviceImage::CreateColorImage(context_, name, image,
-                                                generate_mipmaps, usages);
+    return SingleImage::CreateColorImage(context_, name, image,
+                                         generate_mipmaps, usages);
   }
 
-  std::unique_ptr<ir::DeviceImage> CreateDepthStencilImage(
+  std::unique_ptr<ir::Image> CreateDepthStencilImage(
       std::string_view name, const glm::ivec2& extent,
       ir::MultisamplingMode multisampling_mode,
       absl::Span<const ir::ImageUsage> usages) const override {
-    return GeneralDeviceImage::CreateDepthStencilImage(
-        context_, name, util::CreateExtent(extent), multisampling_mode, usages);
+    return SingleImage::CreateDepthStencilImage(
+        context_, name, extent, multisampling_mode, usages);
   }
 
   // Pass
 
   std::unique_ptr<ir::RenderPass> CreateRenderPass(
-      const ir::RenderPassDescriptor& descriptor) const override {
-    return std::make_unique<RenderPass>(context_, descriptor);
+      ir::RenderPassDescriptor&& descriptor) const override {
+    return std::make_unique<RenderPass>(context_, std::move(descriptor));
   }
 
   std::unique_ptr<ir::ComputePass> CreateComputePass(
-      const ir::ComputePassDescriptor& descriptor) const override {
+      ir::ComputePassDescriptor&& descriptor) const override {
     FATAL("Not implemented yet");
   }
 

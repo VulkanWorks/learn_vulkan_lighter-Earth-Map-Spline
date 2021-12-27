@@ -7,8 +7,10 @@
 
 #include "lighter/renderer/vk/pipeline.h"
 
+#include <algorithm>
 #include <vector>
 
+#include "lighter/common/data.h"
 #include "lighter/common/file.h"
 #include "lighter/renderer/ir/image_usage.h"
 #include "lighter/renderer/vk/type_mapping.h"
@@ -162,8 +164,8 @@ intl::Viewport CreateViewport(const GraphicsPipelineDescriptor& descriptor) {
 intl::Rect2D CreateScissor(const GraphicsPipelineDescriptor& descriptor) {
   const auto& scissor_info = descriptor.viewport_config.scissor;
   return intl::Rect2D{}
-      .setOffset(util::CreateOffset(scissor_info.origin))
-      .setExtent(util::CreateExtent(scissor_info.extent));
+      .setOffset(util::ToOffset(scissor_info.origin))
+      .setExtent(util::ToExtent(scissor_info.extent));
 }
 
 intl::PipelineViewportStateCreateInfo GetViewportStateCreateInfo(
@@ -185,15 +187,9 @@ intl::PipelineRasterizationStateCreateInfo GetRasterizationStateCreateInfo(
 }
 
 intl::PipelineMultisampleStateCreateInfo GetMultisampleStateCreateInfo(
-    const GraphicsPipelineDescriptor& descriptor) {
-  // Since all color and depth stencil attachments must have the same sample
-  // count, we only need to look at one of them.
-  const ir::DeviceImage* attachment =
-      descriptor.depth_stencil_attachment == nullptr
-          ? descriptor.depth_stencil_attachment
-          : descriptor.color_attachment_info_map.begin()->first;
+    intl::SampleCountFlagBits sample_count) {
   return intl::PipelineMultisampleStateCreateInfo{}
-      .setRasterizationSamples(DeviceImage::Cast(*attachment).sample_count());
+      .setRasterizationSamples(sample_count);
 }
 
 intl::StencilOpState CreateStencilOpState(
@@ -227,21 +223,20 @@ intl::PipelineDepthStencilStateCreateInfo GetDepthStencilStateCreateInfo(
 }
 
 std::vector<intl::PipelineColorBlendAttachmentState>
-CreateColorBlendAttachmentStates(
-    const GraphicsPipelineDescriptor& descriptor,
-    absl::Span<const DeviceImage* const> subpass_attachments) {
+CreateColorBlendAttachmentStates(const GraphicsPipelineDescriptor& descriptor) {
+  int max_location = -1;
+  for (const auto& [location, _] : descriptor.color_attachment_map) {
+    max_location = std::max(max_location, location);
+  }
   std::vector<intl::PipelineColorBlendAttachmentState> color_blend_states(
-      subpass_attachments.size());
-  for (int i = 0; i < subpass_attachments.size(); ++i) {
-    const DeviceImage* attachment = subpass_attachments[i];
-    const auto iter = descriptor.color_attachment_info_map.find(attachment);
-    if (iter == descriptor.color_attachment_info_map.end() ||
-        !iter->second.color_blend.has_value()) {
+      max_location + 1);
+  for (const auto& [location, optional_color_blend] :
+           descriptor.color_attachment_map) {
+    if (!optional_color_blend.has_value()) {
       continue;
     }
-
-    const auto& color_blend = iter->second.color_blend.value();
-    color_blend_states[i] = intl::PipelineColorBlendAttachmentState{}
+    const auto& color_blend = optional_color_blend.value();
+    color_blend_states[location] = intl::PipelineColorBlendAttachmentState{}
         .setSrcColorBlendFactor(type::ConvertBlendFactor(
             color_blend.src_color_blend_factor))
         .setDstColorBlendFactor(type::ConvertBlendFactor(
@@ -270,18 +265,18 @@ intl::PipelineColorBlendStateCreateInfo GetColorBlendStateCreateInfo(
 ShaderModule::ShaderModule(const SharedContext& context,
                            std::string_view file_path)
     : WithSharedContext{context} {
-  const auto raw_data = std::make_unique<common::RawData>(file_path);
+  const common::Data file_data = common::file::LoadDataFromFile(file_path);
   const auto shader_module_create_info = intl::ShaderModuleCreateInfo{}
-      .setCodeSize(raw_data->size)
-      .setPCode(reinterpret_cast<const uint32_t*>(raw_data->data));
-  shader_module_ = context_->device()->createShaderModule(
-      shader_module_create_info, *context_->host_allocator());
+      .setCodeSize(file_data.size())
+      .setPCode(file_data.data<uint32_t>());
+  shader_module_ = vk_device().createShaderModule(shader_module_create_info,
+                                                  vk_host_allocator());
 }
 
 Pipeline::Pipeline(const SharedContext& context,
                    const GraphicsPipelineDescriptor& descriptor,
-                   intl::RenderPass render_pass, int subpass_index,
-                   absl::Span<const DeviceImage* const> subpass_attachments)
+                   intl::SampleCountFlagBits sample_count,
+                   intl::RenderPass render_pass, int subpass_index)
     : Pipeline{context, descriptor.pipeline_name,
                intl::PipelineBindPoint::eGraphics,
                descriptor.uniform_descriptor} {
@@ -303,7 +298,7 @@ Pipeline::Pipeline(const SharedContext& context,
       GetViewportStateCreateInfo(&viewports, &scissors);
 
   const auto color_blend_attachment_states =
-      CreateColorBlendAttachmentStates(descriptor, subpass_attachments);
+      CreateColorBlendAttachmentStates(descriptor);
   const auto color_blend_state_create_info =
       GetColorBlendStateCreateInfo(&color_blend_attachment_states);
 
@@ -312,7 +307,7 @@ Pipeline::Pipeline(const SharedContext& context,
   const auto rasterization_state_create_info =
       GetRasterizationStateCreateInfo(descriptor);
   const auto multisample_state_create_info =
-      GetMultisampleStateCreateInfo(descriptor);
+      GetMultisampleStateCreateInfo(sample_count);
   const auto depth_stencil_state_create_info =
       GetDepthStencilStateCreateInfo(descriptor);
 
@@ -328,8 +323,8 @@ Pipeline::Pipeline(const SharedContext& context,
       .setLayout(pipeline_layout_)
       .setRenderPass(render_pass)
       .setSubpass(CAST_TO_UINT(subpass_index));
-  const auto [_, pipeline_] = context_->device()->createGraphicsPipeline(
-      intl::PipelineCache{}, pipeline_create_info, *context_->host_allocator());
+  const auto [_, pipeline_] = vk_device().createGraphicsPipeline(
+      intl::PipelineCache{}, pipeline_create_info, vk_host_allocator());
 }
 
 Pipeline::Pipeline(const SharedContext& context,
@@ -345,8 +340,8 @@ Pipeline::Pipeline(const SharedContext& context,
   const auto pipeline_create_info = intl::ComputePipelineCreateInfo{}
       .setStage(shader_stage_create_infos[0])
       .setLayout(pipeline_layout_);
-  const auto [_, pipeline_] = context_->device()->createComputePipeline(
-      intl::PipelineCache{}, pipeline_create_info, *context_->host_allocator());
+  const auto [_, pipeline_] = vk_device().createComputePipeline(
+      intl::PipelineCache{}, pipeline_create_info, vk_host_allocator());
 }
 
 Pipeline::Pipeline(
@@ -361,8 +356,8 @@ Pipeline::Pipeline(
 
   const auto layout_create_info = GetPipelineLayoutCreateInfo(
       &descriptor_set_layouts, &push_constant_ranges);
-  pipeline_layout_ = context_->device()->createPipelineLayout(
-      layout_create_info, *context_->host_allocator());
+  pipeline_layout_ = vk_device().createPipelineLayout(layout_create_info,
+                                                      vk_host_allocator());
 }
 
 void Pipeline::Bind(intl::CommandBuffer command_buffer) const {
@@ -370,8 +365,8 @@ void Pipeline::Bind(intl::CommandBuffer command_buffer) const {
 }
 
 Pipeline::~Pipeline() {
-  context_->device()->destroy(pipeline_, *context_->host_allocator());
-  context_->device()->destroy(pipeline_layout_, *context_->host_allocator());
+  context_->DeviceDestroy(pipeline_);
+  context_->DeviceDestroy(pipeline_layout_);
 #ifndef NDEBUG
   LOG_INFO << absl::StreamFormat("Pipeline '%s' destructed", name_);
 #endif  // DEBUG

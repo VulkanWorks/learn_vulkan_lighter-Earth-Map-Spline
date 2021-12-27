@@ -29,6 +29,8 @@ cc_library(
     deps = [
         ":image_usage",
         ":type",
+        "//lighter/common:image",
+        "//third_party:glm",
     ],
 )
 
@@ -44,7 +46,10 @@ cc_library(
 
 cc_library(
     name = "pass",
-    hdrs = ["pass.h"],
+    hdrs = [
+        "pass.h",
+        "pass_util.h",
+    ],
     deps = [
         ":image",
         ":pipeline",
@@ -62,7 +67,6 @@ cc_library(
     ],
     deps = [
         ":buffer",
-        ":image",
         ":type",
         "//lighter/common:util",
         "//third_party:absl",

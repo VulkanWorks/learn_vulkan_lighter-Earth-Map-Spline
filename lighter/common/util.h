@@ -111,6 +111,13 @@ std::optional<int> GetIndexIfExists(
 
 }  // namespace internal
 
+// Returns true if 'container' contains 'target'.
+template <typename ValueType, typename TargetType>
+bool Contains(absl::Span<const ValueType> container, const TargetType& target) {
+  const auto iter = std::find(container.begin(), container.end(), target);
+  return iter != container.end();
+}
+
 // Returns the index of the first element that is equal to 'target'.
 // If there is no such element, returns std::nullopt.
 template <typename ValueType, typename TargetType>
@@ -150,6 +157,12 @@ void RemoveDuplicate(std::vector<ValueType>& container) {
     const auto new_end = std::unique(container.begin(), container.end());
     container.resize(std::distance(container.begin(), new_end));
   }
+}
+
+// Returns the total data size of `container`.
+template <typename ValueType>
+size_t GetTotalDataSize(absl::Span<const ValueType> container) {
+  return sizeof(ValueType) * container.size();
 }
 
 // Moves all elements of 'src' to the end of 'dst'.
@@ -192,7 +205,7 @@ template <typename SrcType, typename DstType>
 absl::flat_hash_set<DstType> TransformToSet(
     absl::Span<const SrcType> container,
     absl::FunctionRef<DstType(const SrcType&)> transform) {
-  absl::flat_hash_set<std::string> transformed;
+  absl::flat_hash_set<DstType> transformed;
   std::transform(container.begin(), container.end(),
                  std::inserter(transformed, transformed.end()), transform);
   return transformed;

@@ -14,6 +14,7 @@
 #include "lighter/renderer/vk/image_util.h"
 #include "lighter/renderer/vk/type_mapping.h"
 #include "third_party/absl/container/flat_hash_set.h"
+#include "third_party/absl/memory/memory.h"
 #include "third_party/absl/strings/str_format.h"
 
 namespace lighter::renderer::vk {
@@ -22,10 +23,7 @@ namespace {
 using ir::ImageUsage;
 using ir::MultisamplingMode;
 
-// Extracts width and height from 'dimension'.
-intl::Extent2D ExtractExtent(const common::Image::Dimension& dimension) {
-  return util::CreateExtent(dimension.width, dimension.height);
-}
+const int kSingleMipLevel = common::image::kSingleMipLevel;
 
 // Returns the first image format among 'candidates' that has the specified
 // 'features'. If not found, returns std::nullopt.
@@ -80,9 +78,15 @@ intl::Format ChooseColorImageFormat(const Context& context, int channel,
   }
 }
 
+const std::vector<intl::Format>& GetSupportedDepthStencilFormats() {
+  static const auto* formats = new std::vector<intl::Format>{
+      intl::Format::eD24UnormS8Uint, intl::Format::eD32SfloatS8Uint};
+  return *formats;
+}
+
 intl::Format ChooseDepthStencilImageFormat(const Context& context) {
   const auto format = FindImageFormatWithFeature(
-      context, {intl::Format::eD24UnormS8Uint, intl::Format::eD32SfloatS8Uint},
+      context, GetSupportedDepthStencilFormats(),
       intl::FormatFeatureFlagBits::eDepthStencilAttachment);
   ASSERT_HAS_VALUE(format, "Failed to find depth stencil image format");
   return format.value();
@@ -128,54 +132,70 @@ intl::DeviceMemory CreateImageMemory(const Context& context, intl::Image image,
 
 }  // namespace
 
-std::unique_ptr<DeviceImage> GeneralDeviceImage::CreateColorImage(
+intl::ImageViewType Image::GetViewType() const {
+  switch (layer_type()) {
+    case LayerType::kSingle:
+      return intl::ImageViewType::e2D;
+    case LayerType::kCubemap:
+      return intl::ImageViewType::eCube;
+  }
+}
+
+intl::ImageAspectFlags Image::GetAspectFlags() const {
+  const auto formats_span = absl::MakeSpan(GetSupportedDepthStencilFormats());
+  if (common::util::Contains(formats_span, format())) {
+    return intl::ImageAspectFlagBits::eDepth |
+           intl::ImageAspectFlagBits::eStencil;
+  } else {
+    return intl::ImageAspectFlagBits::eColor;
+  }
+}
+
+std::unique_ptr<SingleImage> SingleImage::CreateColorImage(
     const SharedContext& context, std::string_view name,
     const common::Image::Dimension& dimension,
     MultisamplingMode multisampling_mode, bool high_precision,
     absl::Span<const ImageUsage> usages) {
   const intl::Format format = ChooseColorImageFormat(
       *context, dimension.channel, high_precision, usages);
-  return absl::WrapUnique(new GeneralDeviceImage(
-      context, name, format, ExtractExtent(dimension), kSingleMipLevel,
-      CAST_TO_UINT(dimension.layer), multisampling_mode, usages));
+  return absl::WrapUnique(new SingleImage(
+      context, name, LayerType::kSingle, dimension.extent(), kSingleMipLevel,
+      format, multisampling_mode, usages));
 }
 
-std::unique_ptr<DeviceImage> GeneralDeviceImage::CreateColorImage(
-    const SharedContext& context, std::string_view name, const common::Image& image,
-    bool generate_mipmaps, absl::Span<const ImageUsage> usages) {
-  const auto& dimension = image.dimension();
-  const intl::Format format = ChooseColorImageFormat(
-      *context, dimension.channel, /*high_precision=*/false, usages);
-  // TODO: Generate mipmaps and change mip_levels.
-  return absl::WrapUnique(new GeneralDeviceImage(
-      context, name, format, ExtractExtent(dimension), kSingleMipLevel,
-      CAST_TO_UINT(dimension.layer), MultisamplingMode::kNone, usages));
-}
-
-std::unique_ptr<DeviceImage> GeneralDeviceImage::CreateDepthStencilImage(
+std::unique_ptr<SingleImage> SingleImage::CreateColorImage(
     const SharedContext& context, std::string_view name,
-    const intl::Extent2D& extent, MultisamplingMode multisampling_mode,
+    const common::Image& image, bool generate_mipmaps,
+    absl::Span<const ImageUsage> usages) {
+  const intl::Format format = ChooseColorImageFormat(
+      *context, image.channel(), /*high_precision=*/false, usages);
+  // TODO: Generate mipmaps and change mip_levels.
+  return absl::WrapUnique(new SingleImage(
+      context, name, image.type(), image.extent(), kSingleMipLevel, format,
+      MultisamplingMode::kNone, usages));
+}
+
+std::unique_ptr<SingleImage> SingleImage::CreateDepthStencilImage(
+    const SharedContext& context, std::string_view name,
+    const glm::ivec2& extent, MultisamplingMode multisampling_mode,
     absl::Span<const ImageUsage> usages) {
   const intl::Format format = ChooseDepthStencilImageFormat(*context);
-  return absl::WrapUnique(new GeneralDeviceImage(
-      context, name, format, extent, kSingleMipLevel, kSingleImageLayer,
+  return absl::WrapUnique(new SingleImage(
+      context, name, LayerType::kSingle, extent, kSingleMipLevel, format,
       multisampling_mode, usages));
 }
 
-GeneralDeviceImage::GeneralDeviceImage(
-    const SharedContext& context, std::string_view name, intl::Format format,
-    const intl::Extent2D& extent, uint32_t mip_levels, uint32_t layer_count,
-    MultisamplingMode multisampling_mode, absl::Span<const ImageUsage> usages)
+SingleImage::SingleImage(
+    const SharedContext& context, std::string_view name, LayerType layer_type,
+    const glm::ivec2& extent, int mip_levels, intl::Format format,
+    ir::MultisamplingMode multisampling_mode,
+    absl::Span<const ir::ImageUsage> usages)
     : WithSharedContext{context},
-      DeviceImage{
-          name, format,
-          context_->physical_device().sample_count(multisampling_mode)} {
+      Image{Type::kSingle, name, layer_type, extent, mip_levels, format,
+            context_->physical_device().sample_count(multisampling_mode)} {
   intl::ImageCreateFlags create_flags;
-  if (layer_count == kCubemapImageLayer) {
+  if (layer_type == LayerType::kCubemap) {
     create_flags |= intl::ImageCreateFlagBits::eCubeCompatible;
-  } else {
-    ASSERT_TRUE(layer_count == kSingleImageLayer,
-                absl::StrFormat("Unsupported layer count: %d", layer_count));
   }
 
   absl::flat_hash_set<uint32_t> queue_family_indices_set;
@@ -194,15 +214,15 @@ GeneralDeviceImage::GeneralDeviceImage(
   };
 
   image_ = CreateImage(
-      *context_, create_flags, format, extent, mip_levels, layer_count,
-      sample_count(), image::GetImageUsageFlags(usages),
-      unique_queue_family_indices);
+      *context_, create_flags, format, util::ToExtent(extent), mip_levels,
+      CAST_TO_UINT(GetNumLayers()), sample_count(),
+      image::GetImageUsageFlags(usages), unique_queue_family_indices);
   device_memory_ = CreateImageMemory(
       *context_, image_, intl::MemoryPropertyFlagBits::eDeviceLocal);
 }
 
-GeneralDeviceImage::~GeneralDeviceImage() {
-  context_->device()->destroy(image_, *context_->host_allocator());
+SingleImage::~SingleImage() {
+  context_->DeviceDestroy(image_);
   buffer::FreeDeviceMemory(*context_, device_memory_);
 }
 

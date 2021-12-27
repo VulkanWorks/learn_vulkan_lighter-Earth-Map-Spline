@@ -17,17 +17,23 @@
 #include <utility>
 #include <vector>
 
+#include "lighter/common/data.h"
 #include "lighter/common/file.h"
 #include "lighter/common/graphics_api.h"
+#include "lighter/common/timer.h"
 #include "lighter/common/util.h"
 #include "lighter/common/window.h"
 #include "lighter/renderer/ir/buffer_util.h"
+#include "lighter/renderer/ir/image.h"
+#include "lighter/renderer/ir/pass.h"
+#include "lighter/renderer/ir/pass_util.h"
+#include "lighter/renderer/ir/pipeline.h"
 #include "lighter/renderer/ir/pipeline_util.h"
 #include "lighter/renderer/ir/renderer.h"
 #include "lighter/renderer/ir/type.h"
 #include "lighter/renderer/util.h"
-#include "lighter/renderer/vk/renderer.h"
 #include "third_party/absl/flags/parse.h"
+#include "third_party/absl/types/span.h"
 #include "third_party/glm/glm.hpp"
 #include "third_party/spirv_cross/spirv_cross.hpp"
 

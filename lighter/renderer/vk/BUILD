@@ -64,6 +64,7 @@ cc_library(
         "//lighter/renderer/ir:image_usage",
         "//lighter/renderer/ir:type",
         "//third_party:absl",
+        "//third_party:glm",
     ],
 )
 
@@ -83,9 +84,9 @@ cc_library(
     hdrs = ["pipeline.h"],
     deps = [
         ":context",
-        ":image",
         ":type_mapping",
         ":util",
+        "//lighter/common:data",
         "//lighter/common:file",
         "//lighter/common:ref_count",
         "//lighter/common:util",
@@ -120,7 +121,6 @@ cc_library(
         ":pipeline",
         ":render_pass",
         ":swapchain",
-        ":util",
         "//lighter/common:image",
         "//lighter/common:window",
         "//lighter/renderer/ir:buffer_usage",
@@ -134,16 +134,21 @@ cc_library(
 
 cc_library(
     name = "render_pass",
-    srcs = ["render_pass.cc"],
-    hdrs = ["render_pass.h"],
+    srcs = [
+        "framebuffer.cc",
+        "render_pass.cc",
+    ],
+    hdrs = [
+        "framebuffer.h",
+        "render_pass.h",
+    ],
     deps = [
+        ":context",
         ":image",
-        ":pipeline",
         ":type_mapping",
         ":util",
-        "//lighter/common:util",
+        "//lighter/renderer/ir:image",
         "//lighter/renderer/ir:pass",
-        "//lighter/renderer/ir:pipeline",
         "//third_party:absl",
     ],
 )

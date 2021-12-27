@@ -10,6 +10,7 @@
 #include <algorithm>
 
 #include "lighter/application/vulkan/util.h"
+#include "lighter/common/data.h"
 #include "lighter/common/image.h"
 #include "lighter/renderer/vulkan/wrapper/pipeline.h"
 #include "lighter/renderer/vulkan/wrapper/pipeline_util.h"
@@ -40,11 +41,11 @@ namespace draw_button {
 
 std::vector<common::VertexAttribute> RenderInfo::GetVertexAttributes() {
   std::vector<common::VertexAttribute> attributes;
-  common::file::AppendVertexAttributes<glm::vec1>(
+  common::data::AppendVertexAttributes<glm::vec1>(
       attributes, offsetof(RenderInfo, alpha));
-  common::file::AppendVertexAttributes<glm::vec2>(
+  common::data::AppendVertexAttributes<glm::vec2>(
       attributes, offsetof(RenderInfo, pos_center_ndc));
-  common::file::AppendVertexAttributes<glm::vec2>(
+  common::data::AppendVertexAttributes<glm::vec2>(
       attributes, offsetof(RenderInfo, tex_coord_center));
   return attributes;
 }
@@ -165,12 +166,15 @@ Button::Button(const SharedBasicContext& context,
       static_cast<int>(kBackgroundImageWidth * button_size.y / button_size.x);
   const std::vector<char> background_image_pixels(
       kBackgroundImageWidth * background_image_height, static_cast<char>(255));
-  const common::Image background_image{
-      kBackgroundImageWidth, background_image_height,
-      common::image::kBwImageChannel, background_image_pixels.data(),
-      /*flip_y=*/false};
-  const glm::vec2 background_image_size{background_image.width(),
-                                        background_image.height()};
+  const auto background_image = common::Image::LoadSingleImageFromMemory(
+      /*dimension=*/{
+          kBackgroundImageWidth,
+          background_image_height,
+          common::image::kBwImageChannel,
+      },
+      background_image_pixels.data(),
+      /*flip_y=*/false);
+  const glm::vec2 background_image_size{background_image.extent()};
 
   // On the all buttons texture, if buttons are too close to each other, when
   // sampling one button, pixels of another button might be included due to
